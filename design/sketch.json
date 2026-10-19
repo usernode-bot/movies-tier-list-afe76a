@@ -1,0 +1,14 @@
+{
+  "note": "The featured card this app's creator was shown while it was being made: its emoji (also the app's icon, set in dapp.json), a tagline and a few points that sum up the description in a few words. It is a picture of the idea, not a design: it shows no screen and sets no layout, words or colours. Build from the description in the first version's request; where the two differ, the description wins.",
+  "kind": "featured-card",
+  "emoji": "🎬",
+  "tagline": "Rank your group's favourite films together",
+  "points": [
+    "Anyone can add movies to the list",
+    "Everyone sorts them into tiers",
+    "See where each film lands"
+  ],
+  "source": "model",
+  "model": "deepseek/deepseek-v4.1-flash-1017",
+  "createdAt": "2026-10-19T20:16:10.033Z"
+}
