@@ -154,6 +154,314 @@ app.get('/health', (_req, res) => res.json({ status: 'ok' }));
 // fresh load.
 app.get('/favicon.ico', (_req, res) => res.status(204).end());
 
+// ── The movie tier list ──────────────────────────────────────────────────
+// One shared list: anyone in the project adds a movie by name, anyone moves
+// it into one of five fixed tiers (S best to D worst), and a movie with no
+// tier is "Waiting to be sorted". Only the person who added a movie can
+// remove it. Demo rows are staging only and never appear without ?demo=1.
+const TIERS = new Set(['S', 'A', 'B', 'C', 'D']);
+
+function isDemoRequest(req) {
+  return IS_STAGING && req.query.demo === '1';
+}
+
+function viewerIdOf(req) {
+  return req.user ? String(req.user.id || req.user.sub || '') : null;
+}
+
+function viewerNameOf(req) {
+  return (req.user && req.user.username) || 'Someone';
+}
+
+// Staging mock data: fifteen made-up picks from four made-up friends, so the
+// populated screen can be seen. Fixed ids keep it idempotent, and is_demo
+// keeps every row out of the plain list.
+const DEMO_FRIENDS = [
+  // tier, title, added by, moved by, minutes ago placed
+  ['S', 'Spirited Away', 'Maya', 'Maya', 600],
+  ['S', 'Parasite', 'Priya', 'Priya', 590],
+  ['S', 'The Godfather', 'Sam', 'Sam', 580],
+  ['A', 'Inception', 'Theo', 'Theo', 570],
+  ['A', 'Mad Max: Fury Road', 'Maya', 'Maya', 560],
+  ['A', 'Knives Out', 'Priya', 'Priya', 550],
+  ['A', 'Coco', 'Sam', 'Sam', 540],
+  ['A', 'Heat', 'Theo', 'Theo', 530],
+  ['B', 'Top Gun: Maverick', 'Sam', 'Sam', 520],
+  ['B', 'The Martian', 'Priya', 'Priya', 510],
+  ['B', 'Barbie', 'Maya', 'Maya', 500],
+  ['C', 'Jurassic World', 'Theo', 'Theo', 490],
+  ['C', 'Cats', 'Sam', 'Sam', 480],
+  [null, 'Everything Everywhere All at Once', 'Theo', null, 470],
+  [null, 'The Holdovers', 'Maya', null, 460],
+];
+
+async function initDb() {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS movies (
+      id serial PRIMARY KEY,
+      title text NOT NULL,
+      tier text CHECK (tier IS NULL OR tier IN ('S', 'A', 'B', 'C', 'D')),
+      added_by_id text NOT NULL,
+      added_by_name text NOT NULL,
+      moved_by_name text,
+      created_at timestamptz NOT NULL DEFAULT now(),
+      placed_at timestamptz,
+      is_demo boolean NOT NULL DEFAULT false,
+      demo_key text
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS movies_title_demo_uidx
+      ON movies (lower(title), is_demo);
+    CREATE UNIQUE INDEX IF NOT EXISTS movies_demo_key_uidx
+      ON movies (demo_key, added_by_id);
+    CREATE TABLE IF NOT EXISTS movie_reports (
+      id serial PRIMARY KEY,
+      movie_id integer NOT NULL REFERENCES movies (id) ON DELETE CASCADE,
+      reporter_id text NOT NULL,
+      reporter_name text NOT NULL,
+      created_at timestamptz NOT NULL DEFAULT now(),
+      UNIQUE (movie_id, reporter_id)
+    );
+    COMMENT ON TABLE movie_reports IS 'staging:private';
+  `);
+
+  if (!IS_STAGING) return;
+
+  // One marker per viewer, so the demo's own rows are written once and a
+  // removed one is not put back by the next demo load.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS demo_seeded (
+      viewer_id text PRIMARY KEY,
+      created_at timestamptz NOT NULL DEFAULT now()
+    )
+  `);
+
+  const base = Date.parse('2026-01-05T18:00:00Z');
+  const values = [];
+  const params = [];
+  DEMO_FRIENDS.forEach(([tier, title, friend, movedBy, minutesAgo], i) => {
+    const at = new Date(base - minutesAgo * 60000);
+    const offset = i * 8;
+    params.push(900001 + i, title, tier, 'demo-' + friend.toLowerCase(), friend,
+      movedBy, at.toISOString(), tier ? at.toISOString() : null);
+    values.push(`($${offset + 1}::integer, $${offset + 2}::text, $${offset + 3}::text,
+      $${offset + 4}::text, $${offset + 5}::text, $${offset + 6}::text,
+      $${offset + 7}::timestamptz, $${offset + 8}::timestamptz, true)`);
+  });
+  await pool.query(
+    `INSERT INTO movies (id, title, tier, added_by_id, added_by_name,
+       moved_by_name, created_at, placed_at, is_demo)
+     VALUES ${values.join(', ')}
+     ON CONFLICT DO NOTHING`,
+    params
+  );
+}
+
+// The viewer's own two demo rows: one already sorted, one waiting, so
+// Remove works in the populated preview. Written on the first ?demo=1 load
+// by that viewer, never on a plain route.
+async function ensureViewerDemoRows(req) {
+  if (!req.user) return;
+  const viewerId = viewerIdOf(req);
+  const now = req.now.toISOString();
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const seeded = await client.query(
+      `INSERT INTO demo_seeded (viewer_id, created_at) VALUES ($1::text, $2::timestamptz)
+       ON CONFLICT (viewer_id) DO NOTHING
+       RETURNING viewer_id`,
+      [viewerId, now]
+    );
+    if (seeded.rowCount) {
+      await client.query(
+        `INSERT INTO movies (title, tier, added_by_id, added_by_name,
+           moved_by_name, created_at, placed_at, is_demo, demo_key)
+         VALUES ('Paddington 2', 'S', $1::text, $2::text, 'Maya', $3::timestamptz, $3::timestamptz, true, 'paddington'),
+                ('Dune: Part Two', NULL, $1::text, $2::text, NULL, $3::timestamptz, NULL, true, 'dune')
+         ON CONFLICT DO NOTHING`,
+        [viewerId, viewerNameOf(req), now]
+      );
+    }
+    await client.query('COMMIT');
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => {});
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+const MOVIE_SELECT = `
+  SELECT m.id, m.title, m.tier, m.added_by_id, m.added_by_name,
+         m.moved_by_name, m.created_at, m.placed_at, m.is_demo,
+         EXISTS (
+           SELECT 1 FROM movie_reports r
+           WHERE r.movie_id = m.id AND r.reporter_id = $1
+         ) AS reported_by_viewer
+  FROM movies m`;
+
+const MOVIE_ORDER = `
+  ORDER BY CASE m.tier
+             WHEN 'S' THEN 1 WHEN 'A' THEN 2 WHEN 'B' THEN 3
+             WHEN 'C' THEN 4 WHEN 'D' THEN 5 ELSE 6 END,
+           CASE WHEN m.tier IS NULL THEN m.created_at END DESC NULLS LAST,
+           m.placed_at ASC NULLS FIRST,
+           m.id ASC`;
+
+function serializeMovie(row, viewerId) {
+  return {
+    id: row.id,
+    title: row.title,
+    tier: row.tier,
+    addedById: row.added_by_id,
+    addedByName: row.added_by_name,
+    movedByName: row.moved_by_name,
+    createdAt: row.created_at,
+    placedAt: row.placed_at,
+    isMine: viewerId !== null && String(row.added_by_id) === viewerId,
+    reported: row.reported_by_viewer === true,
+  };
+}
+
+app.get('/api/movies', async (req, res) => {
+  try {
+    const demo = isDemoRequest(req);
+    if (demo) await ensureViewerDemoRows(req);
+    const viewerId = viewerIdOf(req);
+    const { rows } = await pool.query(
+      MOVIE_SELECT + (demo ? ' WHERE m.is_demo = true' : ' WHERE m.is_demo = false') +
+        MOVIE_ORDER,
+      [viewerId]
+    );
+    res.json({ movies: rows.map((row) => serializeMovie(row, viewerId)), viewerId });
+  } catch (err) {
+    console.error('list movies failed: ' + err.message);
+    res.status(500).json({ error: 'list_failed' });
+  }
+});
+
+app.post('/api/movies', async (req, res) => {
+  const raw = req.body && req.body.title;
+  const title = typeof raw === 'string' ? raw.trim() : '';
+  if (!title || title.length > 120) {
+    return res.status(400).json({ error: 'invalid_title' });
+  }
+  const demo = isDemoRequest(req);
+  const viewerId = viewerIdOf(req);
+  const addedByName = viewerNameOf(req);
+  try {
+    const existing = await pool.query(
+      'SELECT tier FROM movies WHERE lower(title) = lower($1) AND is_demo = $2 LIMIT 1',
+      [title, demo]
+    );
+    if (existing.rows.length) {
+      return res.status(409).json({ error: 'duplicate', tier: existing.rows[0].tier });
+    }
+    const { rows } = await pool.query(
+      `INSERT INTO movies (title, tier, added_by_id, added_by_name,
+         created_at, is_demo)
+       VALUES ($1, NULL, $2, $3, $4, $5)
+       RETURNING id, title, tier, added_by_id, added_by_name, moved_by_name,
+                 created_at, placed_at, false AS reported_by_viewer`,
+      [title, viewerId, addedByName, req.now.toISOString(), demo]
+    );
+    res.status(201).json({ movie: serializeMovie(rows[0], viewerId) });
+  } catch (err) {
+    if (err.code === '23505') {
+      const existing = await pool.query(
+        'SELECT tier FROM movies WHERE lower(title) = lower($1) AND is_demo = $2 LIMIT 1',
+        [title, demo]
+      );
+      return res.status(409).json({ error: 'duplicate', tier: existing.rows[0] ? existing.rows[0].tier : null });
+    }
+    console.error('add movie failed: ' + err.message);
+    res.status(500).json({ error: 'add_failed' });
+  }
+});
+
+// Load one row the viewer is allowed to write to, or answer 404. Demo rows
+// exist only in the demo view, so a write without ?demo=1 cannot reach them.
+async function writableMovie(req, res) {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id)) {
+    res.status(404).json({ error: 'not_found' });
+    return null;
+  }
+  const { rows } = await pool.query(
+    `SELECT id, title, tier, added_by_id, added_by_name, is_demo
+     FROM movies WHERE id = $1`,
+    [id]
+  );
+  if (!rows.length || (rows[0].is_demo && !isDemoRequest(req))) {
+    res.status(404).json({ error: 'not_found' });
+    return null;
+  }
+  return rows[0];
+}
+
+app.patch('/api/movies/:id', async (req, res) => {
+  const body = req.body || {};
+  if (!Object.prototype.hasOwnProperty.call(body, 'tier')) {
+    return res.status(400).json({ error: 'invalid_tier' });
+  }
+  const tier = body.tier === null ? null : body.tier;
+  if (tier !== null && !TIERS.has(tier)) {
+    return res.status(400).json({ error: 'invalid_tier' });
+  }
+  try {
+    const movie = await writableMovie(req, res);
+    if (!movie) return;
+    const { rows } = await pool.query(
+      `UPDATE movies
+       SET tier = $1, moved_by_name = $2, placed_at = $3
+       WHERE id = $4
+       RETURNING id, title, tier, added_by_id, added_by_name, moved_by_name,
+                 created_at, placed_at, false AS reported_by_viewer`,
+      [tier, viewerNameOf(req), tier ? req.now.toISOString() : null, movie.id]
+    );
+    res.json({ movie: serializeMovie(rows[0], viewerIdOf(req)) });
+  } catch (err) {
+    console.error('move movie failed: ' + err.message);
+    res.status(500).json({ error: 'move_failed' });
+  }
+});
+
+app.delete('/api/movies/:id', async (req, res) => {
+  try {
+    const movie = await writableMovie(req, res);
+    if (!movie) return;
+    if (String(movie.added_by_id) !== viewerIdOf(req)) {
+      return res.status(403).json({ error: 'not_your_movie' });
+    }
+    await pool.query('DELETE FROM movies WHERE id = $1', [movie.id]);
+    res.json({ removed: true });
+  } catch (err) {
+    console.error('remove movie failed: ' + err.message);
+    res.status(500).json({ error: 'remove_failed' });
+  }
+});
+
+app.post('/api/movies/:id/report', async (req, res) => {
+  try {
+    const movie = await writableMovie(req, res);
+    if (!movie) return;
+    const viewerId = viewerIdOf(req);
+    if (String(movie.added_by_id) === viewerId) {
+      return res.status(400).json({ error: 'own_movie' });
+    }
+    await pool.query(
+      `INSERT INTO movie_reports (movie_id, reporter_id, reporter_name, created_at)
+       VALUES ($1, $2, $3, $4)
+       ON CONFLICT (movie_id, reporter_id) DO NOTHING`,
+      [movie.id, viewerId, viewerNameOf(req), req.now.toISOString()]
+    );
+    res.json({ reported: true });
+  } catch (err) {
+    console.error('report movie failed: ' + err.message);
+    res.status(500).json({ error: 'report_failed' });
+  }
+});
+
 app.use(express.static(path.join(__dirname, 'public')));
 
 // HTML shell: serve the app if authenticated. Unauthenticated top-level
@@ -191,10 +499,31 @@ app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
+let server = null;
+let closing = false;
+
 async function start() {
-  const server = app.listen(port, () => console.log(`Listening on :${port}`));
+  await initDb();
+  server = app.listen(port, () => console.log(`Listening on :${port}`));
   // Let Envoy retire idle upstream connections at 60s, with a 15s margin.
   server.keepAliveTimeout = 75_000;
 }
+
+// Stop accepting connections, give in-flight requests ~3 seconds to finish,
+// close the pool and exit.
+function shutdown(signal) {
+  if (closing) return;
+  closing = true;
+  console.log(`${signal} received, shutting down`);
+  const finish = () => {
+    pool.end().catch(() => {}).finally(() => process.exit(0));
+  };
+  if (!server) return finish();
+  server.close(finish);
+  setTimeout(finish, 3000).unref();
+}
+
+process.on('SIGTERM', () => shutdown('SIGTERM'));
+process.on('SIGINT', () => shutdown('SIGINT'));
 
 start().catch(err => { console.error(err); process.exit(1); });

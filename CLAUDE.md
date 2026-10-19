@@ -95,24 +95,34 @@ tables you've marked private), etc.
 
 ## About Movies Tier List
 
-A tier list
-
-_(add a sentence or two more of product context here so Claude Code has a
-shared understanding of what this app is for)_
+A group's shared tier list for films. Anyone in the project can add a movie
+by name; anyone can move it between the five fixed tiers, S (best) to D
+(worst), or back to "Waiting to be sorted". One list, everyone edits it, and
+the last move wins. Only the person who added a movie can remove it; anyone
+can report someone else's. Movies are names only: no posters, years or
+search.
 
 ## Design
 
 This app's look. The first real version fills in the blanks; every later
 change follows it, and updates it when a request changes the look on purpose.
 
-- **Palette:** _(name the accent, any second colour and the neutrals, e.g.
-  "accent: tomato red; second: basil green; neutrals: warm greys")_
-- **Signature element:** _(the one thing on screen drawn from this app's
-  subject, which no other app would have)_
-- **Type scale:** `text-title`, `text-heading`, `text-body`, `text-small`
-  _(change their sizes in `tailwind.config.js` if you must, not their number)_
-- **One fixed look:** _(only for an app drawn as its own scene, such as a
-  game: which look, and why. Otherwise delete this line.)_
+- **Palette:** warm neutral paper greys for ground, surface, raised and
+  lines; one teal action colour (the only filled button is Add); the film
+  strip's near-black base and light sprocket holes; five poster-coloured
+  tier slates with white letters (S amber, A teal, B plum, C slate, D brick).
+  All are kit tokens in `styles/tailwind-input.css`, with a light and a dark
+  value. The old film text colour is the `on-film` token.
+- **Signature element:** each tier band is a strip of film. A dark film base
+  runs its rows, with a row of sprocket holes along the top and bottom edge
+  and the movies sitting in it like frames. A coloured tier slate at its
+  left carries the letter and the count.
+- **Type scale:** `text-title`, `text-heading`, `text-body`, `text-small`.
+  Titles and tier letters use the serif (`ui-serif`, Georgia), like a poster
+  credit; everything else uses the rounded system face (`ui-rounded`,
+  `system-ui`).
+- **One fixed look:** no. The screen follows the viewer's Homeroom theme,
+  light or dark.
 
 The kit is in `styles/tailwind-input.css`: colour tokens with a light and
 a dark value (named in `tailwind.config.js`), and a few components
@@ -142,6 +152,14 @@ Re-theme by changing the token values there, keeping every text pair at
 
 ## App-specific conventions
 
-_(optional — e.g. "all currency values stored as integer cents, not
-floats"; "the `posts` table is append-only"; "avoid adding new
-dependencies"; etc.)_
+- `movies.tier` is `null` for "Waiting to be sorted" and otherwise one of
+  `S`, `A`, `B`, `C`, `D`. The tiers are fixed; do not add custom ones.
+- `movies.is_demo` rows are staging demo data. They appear only on a
+  `?demo=1` answer and must never show on a plain route, so a check of the
+  empty state is not polluted by the demo the viewer opened.
+- Within a tier, the most recently moved movie comes last (`placed_at`).
+  Waiting movies list newest first (`created_at`).
+- Only `added_by_id` may delete a movie. Reports go to `movie_reports`
+  (a `staging:private` table) and hide nothing on their own.
+- Names and times read `req.user.username` and `req.now`; the page forwards
+  its token as `x-usernode-token` and passes `demo=1` on when the URL has it.

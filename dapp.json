@@ -7,5 +7,24 @@
   "governance": {
     "preset": "you_or_the_group"
   },
-  "tests": []
+  "tests": [
+    {
+      "name": "Tier list loads",
+      "path": "/",
+      "expectSelector": "[data-tier=\"D\"]"
+    },
+    {
+      "name": "Populated demo",
+      "path": "/?demo=1",
+      "expectText": "Paddington 2",
+      "id": "demo",
+      "visual": true,
+      "impact": ["public/**", "styles/**", "server.js"]
+    },
+    {
+      "name": "Add field labelled",
+      "path": "/",
+      "expectText": "Movie name"
+    }
+  ]
 }
