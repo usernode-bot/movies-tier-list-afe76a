@@ -55,6 +55,20 @@ module.exports = {
         danger: token('danger'),
         'on-danger': token('on-danger'),
         focus: token('focus'), // the keyboard focus ring
+        film: token('film'), // the tier bands' film base
+        'on-film': token('on-film'), // text on the film base
+        sprocket: token('sprocket'), // the holes along a band's edges
+        'tier-s': token('tier-s'), // the five poster-coloured tier slates
+        'tier-a': token('tier-a'),
+        'tier-b': token('tier-b'),
+        'tier-c': token('tier-c'),
+        'tier-d': token('tier-d'),
+      },
+      // Two system families: a serif for titles and tier letters, like a
+      // poster credit, and the rounded system face for everything else.
+      fontFamily: {
+        serif: ['ui-serif', 'Georgia', '"Times New Roman"', 'serif'],
+        sans: ['ui-rounded', 'system-ui', '-apple-system', '"Segoe UI"', 'sans-serif'],
       },
       // The type scale: four sizes, and nothing in between.
       fontSize: {

@@ -40,26 +40,38 @@
     --danger: 185 28 28;
     --on-danger: 255 255 255;
     --focus: 13 148 136;      /* the keyboard focus ring */
-    --film: 32 28 26; /* from the spec's screens */
-    --sprocket: 246 243 238; /* from the spec's screens */
-    --tier-s: 146 98 14; /* from the spec's screens */
-    --tier-a: 15 98 94; /* from the spec's screens */
-    --tier-b: 107 53 93; /* from the spec's screens */
-    --tier-c: 67 78 94; /* from the spec's screens */
-    --tier-d: 120 53 53; /* from the spec's screens */
+    /* The film-strip bands: a dark film base, light sprocket holes and film
+       text, and five poster-coloured tier slates that keep white letters in
+       both looks. */
+    --film: 32 28 26;
+    --on-film: 214 208 200;
+    --sprocket: 246 243 238;
+    --tier-s: 146 98 14;      /* amber */
+    --tier-a: 15 98 94;       /* teal */
+    --tier-b: 107 53 93;      /* plum */
+    --tier-c: 67 78 94;       /* slate */
+    --tier-d: 120 53 53;      /* brick */
   }
   .dark {
-    --ground: 12 10 9;
-    --surface: 28 25 23;
-    --raised: 41 37 36;
-    --fg: 245 245 244;
-    --muted: 168 162 158;
-    --line: 68 64 60;
+    --ground: 20 18 16;
+    --surface: 32 29 26;
+    --raised: 48 44 40;
+    --fg: 245 242 237;
+    --muted: 168 162 154;
+    --line: 64 59 54;
     --accent: 45 212 191;
     --on-accent: 4 47 46;
     --danger: 248 113 113;
     --on-danger: 69 10 10;
     --focus: 94 234 212;
+    --film: 12 10 9;
+    --on-film: 214 208 200;
+    --sprocket: 168 162 154;
+    --tier-s: 161 108 16;
+    --tier-a: 17 110 105;
+    --tier-b: 124 62 108;
+    --tier-c: 78 90 108;
+    --tier-d: 138 60 60;
   }
   /* el.hidden = true hides an element even when a class gives it a display
      (flex, the components below). */
@@ -124,6 +136,30 @@
   /* The label above a section: sentence case, never uppercase or tracked. */
   .section-label {
     @apply mb-2 px-1 text-small font-medium text-muted;
+  }
+
+  /* The tier list's signature element: each tier band is a strip of film,
+     a dark base with a row of sprocket holes along its top and bottom edge
+     and the movies sitting in it like frames. `.sprockets` draws the holes
+     with a radial gradient on the film base. */
+  .tier-band {
+    @apply flex overflow-hidden rounded-xl border border-line;
+  }
+  .sprockets {
+    height: 10px;
+    opacity: .85;
+    background-image: radial-gradient(circle at 5px 5px, rgb(var(--sprocket)) 2.5px, transparent 3px);
+    background-size: 16px 10px;
+  }
+  /* A movie in a band, a frame you tap to open it. */
+  .movie-chip {
+    @apply inline-flex min-h-11 max-w-full items-center rounded-md bg-raised px-3 text-small font-medium text-fg;
+  }
+
+  /* A note: a plain bordered block, used when the list is empty around the
+     add field. */
+  .note {
+    @apply rounded-xl border border-line bg-surface p-4;
   }
 
   /* The states of anything that loads data. Show exactly one at a time:
