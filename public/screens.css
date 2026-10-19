@@ -81,13 +81,15 @@ h1 {font-size:28px;line-height:36px;font-weight:700;margin:0;font-family:ui-seri
 /* The empty list's note around the add field. */
 .note .add {margin-bottom:0}
 
-.empty-title {font-size:20px;line-height:28px;font-weight:700;margin:0 0 12px;font-family:ui-serif,Georgia,serif}
+.empty-title {font-size:16px;line-height:24px;font-weight:600;margin:0 0 12px}
 
 /* A short line under the add field or the panel's controls after a write. */
 .write-msg {font-size:14px;line-height:20px;color:rgb(var(--danger));margin:8px 4px 0}
 
+.error-card {width:100%;border:1px solid rgb(var(--line));background:rgb(var(--surface));border-radius:12px;padding:16px;text-align:left}
+.error-card .btn-secondary {width:100%;display:flex;gap:8px;margin-top:12px}
 .err-title {font-size:16px;line-height:24px;font-weight:600;margin:0}
-.err-body {font-size:14px;line-height:20px;color:rgb(var(--muted));margin:0 0 6px}
+.err-body {font-size:14px;line-height:20px;color:rgb(var(--muted));margin:0}
 
 /* Screen 2: the movie panel. Its rules are scoped so they do not reach the
    tier list (the two screens share class names). */

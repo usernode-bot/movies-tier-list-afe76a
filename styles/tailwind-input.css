@@ -159,7 +159,7 @@
   /* A note: a plain bordered block, used when the list is empty around the
      add field. */
   .note {
-    @apply rounded-xl border border-line bg-surface p-4;
+    @apply mb-5 rounded-xl border border-line bg-surface p-4;
   }
 
   /* The states of anything that loads data. Show exactly one at a time:
